@@ -20,7 +20,7 @@ from urllib.parse import quote
 from bot import bot
 from constants import crop_week_day, month_dict, tournament_name
 from config import ANNOUNCEMENT_CHANNEL_ID, CHANNEL_ID, TOPIC_ID
-from keyboards import build_create_theme_markup, build_reg_markup, get_checking_keyboard, choosing_tournament
+from keyboards import build_create_theme_markup, build_reg_markup, get_checking_keyboard, choosing_tournament, room_markup, tournament_type
 from utils import difficulty_symbol, get_item_color, get_preview_url
 
 locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
@@ -42,7 +42,7 @@ class SchedulerMiddleware(LifetimeControllerMiddleware):
 """
 class PostForm(StatesGroup):
     tournamentid = State()
-    shrek_mkm = State()
+    another_tournament = State()
     date_info = State()
     time_info = State()
     editors = State()
@@ -103,32 +103,31 @@ async def process_start_command(call: CallbackQuery, state: FSMContext):
     await call.answer()
 
 # шрек/мкм
-@rt.callback_query(F.data == 'shrek_mkm')
+@rt.callback_query(F.data == 'another_tournament')
 async def process_start_command(call: CallbackQuery, state: FSMContext):
     await call.message.answer('Введите название турнира (не забудьте указать тур)')
-    await state.set_state(PostForm.shrek_mkm)
+    await state.set_state(PostForm.another_tournament)
     await call.answer()
 
-@rt.message(PostForm.shrek_mkm)
-async def shr_mkm_name(message: Message, state: FSMContext):
+@rt.message(PostForm.another_tournament)
+async def another_tournament_name(message: Message, state: FSMContext):
     global difficulty
     difficulty = 2
-    await state.update_data(shrek_mkm=message.text)
-    await message.answer("Введите редакторов в формате <i>{имя фамилия}, {имя фамилия}, ... </i> \nЕсли редакторов шесть и более -- укажите только фамилии <i>({фамилия}, {фамилия}, ...)</i> \n \
-<blockquote><b>Пример 1:</b> \nМаксим Мерзляков, Сергей Терентьев, Андрей Скиренко, Матвей Гомон\n\
-<b>Пример 2: </b>\nЛешкович, Наугольнов, Полевой, Раскумандрин, Рождествин, Рыбачук, Сушков</blockquote>")
+    await state.update_data(another_tournament=message.text)
+    await message.answer("Введите редакторов в формате <i>{имя фамилия}, {имя фамилия}, ... </i> \nЕсли редакторов шесть и более — укажите только фамилии <i>({фамилия}, {фамилия}, ...)</i> \n \
+<blockquote><b><u>Пример 1:</u></b> \n<i>Максим Мерзляков, Сергей Терентьев, Андрей Скиренко, Матвей Гомон</i>\n\
+<b><u>Пример 2:</u> </b>\n<i>Лешкович, Наугольнов, Полевой, Раскумандрин, Рождествин, Рыбачук, Сушков</i></blockquote>")
     await state.set_state(PostForm.editors)
 
 @rt.message(PostForm.editors)
-async def shr_mkm_name(message: Message, state: FSMContext):
+async def another_tournament_name(message: Message, state: FSMContext):
     await state.update_data(editors=message.text)
-    await message.answer("Напишите дату в формате <i>ДД.ММ.ГГГГ</i> или <i>ДД/ММ/ГГГГ</i>")
+    await message.answer("Напишите дату в формате <i>ДД.ММ.ГГ</i> или <i>ДД/ММ/ГГ</i>")
     await state.set_state(PostForm.date_info)
 
-# НЕ шрек и НЕ МКМ
-@rt.callback_query(F.data == 'another_tournament')
+# Не рейтинговый турнир
+@rt.callback_query(F.data == 'rate_tournament')
 async def process_start_command(call: CallbackQuery, state: FSMContext):
-    await call.message.answer('Давайте создадим посты и опросы для подготовки к игре')
     await call.message.answer('Введите ID турнира:')
     await state.set_state(PostForm.tournamentid)
     await call.answer()
@@ -137,13 +136,16 @@ async def process_start_command(call: CallbackQuery, state: FSMContext):
 @rt.message(PostForm.tournamentid)
 async def get_tournament_info(message: Message, state: FSMContext):
     await state.update_data(tournamentid=message.text)
-    await message.answer("Напишите дату в формате <i>ДД.ММ.ГГГГ</i> или <i>ДД/ММ/ГГГГ</i>")
+    await message.answer("Напишите дату в формате <i>ДД.ММ.ГГ</i> или <i>ДД/ММ/ГГ</i>")
     await state.set_state(PostForm.date_info)
 
 # Записывается дата, переход курсора на поле для времени
 @rt.message(PostForm.date_info)
 async def get_date_info(message: Message, state: FSMContext):
-    msg = message.text
+    if len(message.text) == 8:
+        msg = message.text[:-2] + '20' + message.text[-2:]
+    else:
+        msg = message.text
     try:
         if '.' in msg:
             our_data = datetime.datetime.strptime(msg, "%d.%m.%Y")
@@ -180,7 +182,7 @@ async def get_time_info(message: Message, state: FSMContext):
         week_day = 'СУББОТА'
         place = 403
     final_date = week_day + ' (' + txt_date + ')'
-    if 'shrek_mkm' not in data:
+    if 'another_tournament' not in data:
         id_url = quote(str(data['tournamentid']))
         url_parse = 'https://api.rating.chgk.net/tournaments/' + id_url
         global tournament_info
@@ -218,11 +220,11 @@ async def get_time_info(message: Message, state: FSMContext):
             discounted_payment = "Информация о льготном тарифе отсутствует"
             annotation = "—"
             currency_symbol_disc = ''
-        await message.answer(text='Исходные расценки турнира:')
         await message.answer(
-            text=f'<b>Основной тариф</b>: {main_payment}{currency_symbol} \n<b>Льготный тариф</b>: {discounted_payment}{currency_symbol_disc} \n<b>Пояснение к льготе</b>: {annotation}', parse_mode='HTML')
+            text=f'Исходные расценки турнира:\n<blockquote><b>Основной тариф</b>: {main_payment}{currency_symbol} \
+\n<b>Льготный тариф</b>: {discounted_payment}{currency_symbol_disc} \n<b>Пояснение к льготе</b>: {annotation}</blockquote>', parse_mode='HTML')
     else:
-        full_name = data['shrek_mkm']
+        full_name = data['another_tournament']
         editors_lst = data['editors']
         if ',' in editors_lst:
             txt_editors = 'Редакторы'
@@ -230,7 +232,7 @@ async def get_time_info(message: Message, state: FSMContext):
             txt_editors = 'Редактор'
         difficulty = difficulty_symbol(2)
         await state.set_state(PostForm.price)
-    await message.answer(text=f'Введите требуемую тарификацию. \n<blockquote><b>Пример:</b>\nОсновной / студенческий / школьный зачет - 1000 / 700 / 300\nТройки / парный зачет - 700 / 500</blockquote>')
+    await message.answer(text=f'Введите требуемую тарификацию. \n<blockquote><b>Пример:</b>\nОсновной / студенческий / школьный зачет - 1000 / 700 / 300\nТройки / парный зачет - 700 / 500 </blockquote>')
 
 # Хендлер для поста
 @rt.message(PostForm.price)
@@ -241,7 +243,7 @@ async def make_post(message: Message, state: State):
         if not cost.startswith('Основной'):
             await bot.send_message(message.chat.id, "Стоимость должна начинаться с <i>Основной...</i>. \nВведите корректную тарификацию ")
             raise
-        post = f'{difficulty} {html.bold(final_date)} {difficulty}\nЧто❓ {full_name}\nГде❓ XI корпус СГУ, {place} аудитория\nКогда❓ {full_time}\n\n✍🏻 {txt_editors} - {editors_lst}.\n💲 {cost}.'
+        post = f'{difficulty} {html.bold(final_date)} {difficulty}\nЧто❓ {full_name}\nГде❓ XI корпус СГУ, {place} аудитория\nКогда❓ {full_time}\n\n✍🏻 {txt_editors} - {html.italic(editors_lst)}.\n💲 {cost}.'
         await message.answer(post)
         checking_keyboard = get_checking_keyboard()
         await message.answer("Проверьте текст поста. Всё ли верно?", reply_markup=checking_keyboard)
