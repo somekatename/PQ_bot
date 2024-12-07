@@ -8,7 +8,7 @@ import sys
 
 from aiogram import Dispatcher, F, html, Router
 #from aiogram.dispatcher.middlewares import LifetimeControllerMiddleware
-from aiogram.filters import Command
+from aiogram.filters import Command, IS_MEMBER, IS_NOT_MEMBER
 from aiogram.filters.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -19,7 +19,7 @@ from urllib.parse import quote
 
 from bot import bot
 from constants import crop_week_day, month_dict, tournament_name
-from config import ANNOUNCEMENT_CHANNEL_ID, CHANNEL_ID, TOPIC_ID
+from config import ANNOUNCEMENT_CHANNEL_ID, CHANNEL_ID, TOPIC_ID, allowed_id
 from keyboards import build_create_theme_markup, build_reg_markup, get_checking_keyboard, choosing_tournament, room_markup, tournament_type_keyboard
 from utils import difficulty_symbol, get_item_color, get_preview_url
 
@@ -54,19 +54,32 @@ class PostForm(StatesGroup):
 ###############################################################################
 #########################   Начало работы бота   ##############################
 ###############################################################################
+from aiogram.filters import BaseFilter
 
+admin_ids = [123, 456]
+
+
+class IsAdmin(BaseFilter):
+    def __init__(self, admin_ids) -> None:
+        self.admin_ids = admin_ids
+
+    async def __call__(self, message: Message) -> bool:
+        return message.from_user.id in self.admin_ids
 
 @rt.message(Command(commands=["start"]))
 async def first_fork(message: Message):
     await message.answer(text="Ошибка доступа!")
 
+@rt.message(~F.from_user.id.in_(allowed_id), Command(commands=["make_me_post"]))
+async def first_fork(message: Message):
+    await message.answer(text="Ошибка доступа!")
 
-@rt.message(Command(commands=["make_me_post"]))
+@rt.message(F.from_user.id.in_(allowed_id), Command(commands=["make_me_post"]))
 async def first_fork(message: Message):
     builder_fork = InlineKeyboardBuilder()
     fork_buttons = [
         InlineKeyboardButton(text="Добавить информацию о новой игре", callback_data='creation'),
-        InlineKeyboardButton(text="Удалить информацию о стоимости прошедшего турнира", callback_data='edition'),
+        InlineKeyboardButton(text="Удалить стоимость прошедшего турнира", callback_data='edition'),
         InlineKeyboardButton(text="Завершить работу", callback_data='end')
     ]
     builder_fork.row(*fork_buttons, width=1)
@@ -107,7 +120,8 @@ async def process_start_command(call: CallbackQuery, state: FSMContext):
 # нерейтинговый
 @rt.callback_query(F.data == 'another_tournament')
 async def process_start_command(call: CallbackQuery, state: FSMContext):
-    await call.message.answer('Введите название турнира (не забудьте указать тур)')
+    await call.message.answer('Введите название турнира, указав тур.<blockquote><b><u>Источники</u></b>:\nМКМ - https://student.chgk.info/ \n\
+ШРеК - https://shrek.chgk.su/</blockquote>')
     await state.set_state(PostForm.another_tournament)
     await call.answer()
 
@@ -130,8 +144,8 @@ async def another_tournament_name(call: CallbackQuery, state: FSMContext):
     else:
         difficulty = 0
     await state.update_data(another_tour_type=difficulty)
-    await call.message.answer("Введите редакторов в формате <i>{имя фамилия}, {имя фамилия}, ... </i> \nЕсли редакторов шесть и более — укажите только фамилии <i>({фамилия}, {фамилия}, ...)</i> \n \
-<blockquote><b><u>Пример 1:</u></b> \n<i>Максим Мерзляков, Сергей Терентьев, Андрей Скиренко, Матвей Гомон</i>\n\
+    await call.message.answer("Введите редакторов в формате <i>{имя фамилия}, ..., {имя фамилия}</i> \nЕсли редакторов шесть и более — укажите только их фамилии\
+<blockquote><b><u>Пример 1:</u></b> \n<i>Максим Мерзляков, Сергей Терентьев, Андрей Скиренко, Матвей Гомон</i>\n\n\
 <b><u>Пример 2:</u> </b>\n<i>Лешкович, Наугольнов, Полевой, Раскумандрин, Рождествин, Рыбачук, Сушков</i></blockquote>")
     await state.set_state(PostForm.editors)
 
@@ -171,7 +185,7 @@ async def get_date_info(message: Message, state: FSMContext):
             await bot.send_message(message.chat.id, "Кажется, это не выходной день...")
             raise
         await state.update_data(date_info=our_data)
-        await bot.send_message(message.chat.id, "Напишите время проведения игры в формате <i>ЧЧ:ММ</i>")
+        await bot.send_message(message.chat.id, "Напишите время проведения игры в формате <i>ЧЧ:ММ</i> или <i>ЧЧ/ММ</i>")
         await state.set_state(PostForm.time_info)
     except:
         await bot.send_message(message.chat.id, "Введите допустимую дату для турнира")
@@ -188,6 +202,8 @@ async def get_time_info(message: Message, state: FSMContext):
     global full_date
     full_date = data['date_info']
     full_time = data['time_info']
+    if '/' in full_time:
+        full_time = full_time.replace('/', ':')
     txt_date = f'{str(full_date.day)} {month_dict[full_date.month]}'
     global week_day
     week_day = full_date.weekday()
@@ -219,6 +235,7 @@ async def get_time_info(message: Message, state: FSMContext):
         txt_editors = "Редактор" if len(editors) == 1 else "Редакторы"
         editors_lst = ', '.join(editors)
         # Сбор данных об оплате
+        global main_payment, currency_symbol, discounted_payment, annotation, currency_symbol_disc
         main_payment = tournament_info['mainPayment']
         if tournament_info['currency'] == 'r':
             currency_symbol = '₽'
@@ -234,9 +251,6 @@ async def get_time_info(message: Message, state: FSMContext):
             discounted_payment = "Информация о льготном тарифе отсутствует"
             annotation = "—"
             currency_symbol_disc = ''
-        await message.answer(
-            text=f'Исходные расценки турнира:\n<blockquote><b>Основной тариф</b>: {main_payment}{currency_symbol} \
-\n<b>Льготный тариф</b>: {discounted_payment}{currency_symbol_disc} \n<b>Пояснение к льготе</b>: {annotation}</blockquote>', parse_mode='HTML')
     else:
         full_name = data['another_tournament']
         editors_lst = data['editors']
@@ -253,7 +267,13 @@ async def get_time_info(message: Message, state: FSMContext):
 @rt.callback_query(F.data == '401')
 async def room401(call: CallbackQuery, state: State):
     await state.update_data(room='401')
-    await call.message.answer(text=f'Введите требуемую тарификацию. \n<blockquote><b>Пример:</b>\nОсновной / студенческий / школьный зачет - 1000 / 700 / 300\nТройки / парный зачет - 700 / 500 </blockquote>')
+    data = await state.get_data()
+    if 'tournamentid' in data:
+        await call.message.answer(
+            text=f'Исходные расценки турнира:\n<blockquote><b>Основной тариф</b>: {main_payment}{currency_symbol} \
+        \n<b>Льготный тариф</b>: {discounted_payment}{currency_symbol_disc} \n<b>Пояснение к льготе</b>: {annotation}</blockquote>',
+            parse_mode='HTML')
+    await call.message.answer(text=f'Введите требуемую тарификацию.\n<pre>Основной / студенческий / школьный зачет - 1000 / 700 / 300\nТройки / парный зачет - 700 / 500 </pre>')
     await state.set_state(PostForm.price)
 
 @rt.callback_query(F.data == 'another_room')
@@ -263,7 +283,13 @@ async def another_room(call: CallbackQuery):
 @rt.message(PostForm.room)
 async def define_another_room(message: Message, state: State):
     await state.update_data(room=message.text)
-    await message.answer(text=f'Введите требуемую тарификацию. \n<blockquote><b>Пример:</b>\nОсновной / студенческий / школьный зачет - 1000 / 700 / 300\nТройки / парный зачет - 700 / 500 </blockquote>')
+    data = await state.get_data()
+    if 'tournamentid' in data:
+        await message.answer(
+            text=f'Исходные расценки турнира:\n<blockquote><b>Основной тариф</b>: {main_payment}{currency_symbol} \
+        \n<b>Льготный тариф</b>: {discounted_payment}{currency_symbol_disc} \n<b>Пояснение к льготе</b>: {annotation}</blockquote>',
+            parse_mode='HTML')
+    await message.answer(text=f'Введите требуемую тарификацию.\n<pre>Основной / студенческий / школьный зачет - 1000 / 700 / 300\nТройки / парный зачет - 700 / 500 </pre>')
     await state.set_state(PostForm.price)
 
 
