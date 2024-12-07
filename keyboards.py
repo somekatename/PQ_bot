@@ -47,11 +47,13 @@ def room_markup() -> InlineKeyboardMarkup:
     builder_room.row(room_buttons, width=1)
     return builder_room.as_markup()
 
-def tournament_type() -> InlineKeyboardMarkup:
+def tournament_type_keyboard() -> InlineKeyboardMarkup:
     builder_type = InlineKeyboardBuilder()
     type_buttons = [
-        [InlineKeyboardButton(text='📗', callback_data='easy'), InlineKeyboardButton(text='📙', callback_data='medium'), InlineKeyboardButton(text='📕', callback_data='hard')],
+        InlineKeyboardButton(text='📗', callback_data='easy'),
+        InlineKeyboardButton(text='📙', callback_data='medium'),
+        InlineKeyboardButton(text='📕', callback_data='hard'),
         InlineKeyboardButton(text="🚨 Свояк", callback_data='jeopardy')
     ]
-    builder_type.row(type_buttons, width=3)
+    builder_type.row(*type_buttons, width=3)
     return builder_type.as_markup()

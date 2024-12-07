@@ -20,7 +20,7 @@ from urllib.parse import quote
 from bot import bot
 from constants import crop_week_day, month_dict, tournament_name
 from config import ANNOUNCEMENT_CHANNEL_ID, CHANNEL_ID, TOPIC_ID
-from keyboards import build_create_theme_markup, build_reg_markup, get_checking_keyboard, choosing_tournament, room_markup, tournament_type
+from keyboards import build_create_theme_markup, build_reg_markup, get_checking_keyboard, choosing_tournament, room_markup, tournament_type_keyboard
 from utils import difficulty_symbol, get_item_color, get_preview_url
 
 locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
@@ -43,6 +43,7 @@ class SchedulerMiddleware(LifetimeControllerMiddleware):
 class PostForm(StatesGroup):
     tournamentid = State()
     another_tournament = State()
+    another_tour_type = State()
     date_info = State()
     time_info = State()
     editors = State()
@@ -102,7 +103,7 @@ async def process_start_command(call: CallbackQuery, state: FSMContext):
     await state.set_state(PostForm.tournamentid)
     await call.answer()
 
-# шрек/мкм
+# нерейтинговый
 @rt.callback_query(F.data == 'another_tournament')
 async def process_start_command(call: CallbackQuery, state: FSMContext):
     await call.message.answer('Введите название турнира (не забудьте указать тур)')
@@ -111,10 +112,24 @@ async def process_start_command(call: CallbackQuery, state: FSMContext):
 
 @rt.message(PostForm.another_tournament)
 async def another_tournament_name(message: Message, state: FSMContext):
-    global difficulty
-    difficulty = 2
     await state.update_data(another_tournament=message.text)
-    await message.answer("Введите редакторов в формате <i>{имя фамилия}, {имя фамилия}, ... </i> \nЕсли редакторов шесть и более — укажите только фамилии <i>({фамилия}, {фамилия}, ...)</i> \n \
+    markup_fork = tournament_type_keyboard()
+    await bot.send_message(chat_id=message.chat.id, text='Укажите тип турнира', reply_markup=markup_fork)
+    await state.set_state(PostForm.another_tour_type)
+
+@rt.callback_query(PostForm.another_tour_type)
+async def another_tournament_name(call: CallbackQuery, state: FSMContext):
+    global difficulty
+    if call.data == 'easy':
+        difficulty = 2
+    elif call.data == 'medium':
+        difficulty = 3.5
+    elif call.data == 'hard':
+        difficulty = 5
+    else:
+        difficulty = 0
+    await state.update_data(another_tour_type=difficulty)
+    await call.message.answer("Введите редакторов в формате <i>{имя фамилия}, {имя фамилия}, ... </i> \nЕсли редакторов шесть и более — укажите только фамилии <i>({фамилия}, {фамилия}, ...)</i> \n \
 <blockquote><b><u>Пример 1:</u></b> \n<i>Максим Мерзляков, Сергей Терентьев, Андрей Скиренко, Матвей Гомон</i>\n\
 <b><u>Пример 2:</u> </b>\n<i>Лешкович, Наугольнов, Полевой, Раскумандрин, Рождествин, Рыбачук, Сушков</i></blockquote>")
     await state.set_state(PostForm.editors)
@@ -230,7 +245,7 @@ async def get_time_info(message: Message, state: FSMContext):
             txt_editors = 'Редакторы'
         else:
             txt_editors = 'Редактор'
-        difficulty = difficulty_symbol(2)
+        difficulty = difficulty_symbol(data['another_tour_type'])
         await state.set_state(PostForm.price)
     await message.answer(text=f'Введите требуемую тарификацию. \n<blockquote><b>Пример:</b>\nОсновной / студенческий / школьный зачет - 1000 / 700 / 300\nТройки / парный зачет - 700 / 500 </blockquote>')
 

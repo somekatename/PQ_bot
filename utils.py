@@ -6,14 +6,14 @@ from imgbb import get_client
 
 
 def difficulty_symbol(difficulty: int) -> str:
-    if difficulty < 3:
+    if 0 < difficulty < 3:
         difficulty_symbol = '📗'
     elif 3 <= difficulty < 4.5:
         difficulty_symbol = '📙'
     elif difficulty >= 4.5:
         difficulty_symbol = '📕'
     else:
-        difficulty_symbol = '💀'
+        difficulty_symbol = '🚨'
     return difficulty_symbol
 
 
