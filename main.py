@@ -47,6 +47,7 @@ class PostForm(StatesGroup):
     date_info = State()
     time_info = State()
     editors = State()
+    room = State()
     price = State()
 
 
@@ -192,10 +193,8 @@ async def get_time_info(message: Message, state: FSMContext):
     week_day = full_date.weekday()
     if week_day == 6:
         week_day = "ВОСКРЕСЕНЬЕ"
-        place = 401
     elif week_day == 5:
         week_day = 'СУББОТА'
-        place = 403
     final_date = week_day + ' (' + txt_date + ')'
     if 'another_tournament' not in data:
         id_url = quote(str(data['tournamentid']))
@@ -247,17 +246,38 @@ async def get_time_info(message: Message, state: FSMContext):
             txt_editors = 'Редактор'
         difficulty = difficulty_symbol(data['another_tour_type'])
         await state.set_state(PostForm.price)
+    place_fork = room_markup()
+    await bot.send_message(message.chat.id, 'Выберите аудиторию для проведения игры', reply_markup=place_fork)
+    await state.set_state(PostForm.room)
+
+@rt.callback_query(F.data == '401')
+async def room401(call: CallbackQuery, state: State):
+    await state.update_data(room='401')
+    await call.message.answer(text=f'Введите требуемую тарификацию. \n<blockquote><b>Пример:</b>\nОсновной / студенческий / школьный зачет - 1000 / 700 / 300\nТройки / парный зачет - 700 / 500 </blockquote>')
+    await state.set_state(PostForm.price)
+
+@rt.callback_query(F.data == 'another_room')
+async def another_room(call: CallbackQuery):
+    await call.message.answer('Введите требуемую аудиторию')
+
+@rt.message(PostForm.room)
+async def define_another_room(message: Message, state: State):
+    await state.update_data(room=message.text)
     await message.answer(text=f'Введите требуемую тарификацию. \n<blockquote><b>Пример:</b>\nОсновной / студенческий / школьный зачет - 1000 / 700 / 300\nТройки / парный зачет - 700 / 500 </blockquote>')
+    await state.set_state(PostForm.price)
+
 
 # Хендлер для поста
 @rt.message(PostForm.price)
 async def make_post(message: Message, state: State):
-    global cost, post
+    global cost, post, place
     cost = message.text
     try:
         if not cost.startswith('Основной'):
             await bot.send_message(message.chat.id, "Стоимость должна начинаться с <i>Основной...</i>. \nВведите корректную тарификацию ")
             raise
+        data = await state.get_data()
+        place = data['room']
         post = f'{difficulty} {html.bold(final_date)} {difficulty}\nЧто❓ {full_name}\nГде❓ XI корпус СГУ, {place} аудитория\nКогда❓ {full_time}\n\n✍🏻 {txt_editors} - {html.italic(editors_lst)}.\n💲 {cost}.'
         await message.answer(post)
         checking_keyboard = get_checking_keyboard()

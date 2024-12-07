@@ -44,7 +44,7 @@ def room_markup() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="401", callback_data='401'),
         InlineKeyboardButton(text="Другая", callback_data='another_room')
     ]
-    builder_room.row(room_buttons, width=1)
+    builder_room.row(*room_buttons, width=1)
     return builder_room.as_markup()
 
 def tournament_type_keyboard() -> InlineKeyboardMarkup:
